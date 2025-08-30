@@ -1,0 +1,9 @@
+[package]
+name = "entangled-pairs-bb84"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+cc="1"
+rand = "0.8"
+serialport = "4.2.0"
