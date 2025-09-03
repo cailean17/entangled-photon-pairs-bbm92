@@ -18,10 +18,12 @@ impl<'a> TimeTaggerIngest<'a> {
         spad_b_detection_stream: &mut Vec<PhotonDetectionEvent>,
         basis_bit_detection_stream: &mut Vec<BasisBitDetectionEvent>,
     ) -> io::Result<()> {
+        // println!("SPAD A: {}, SPAD B: {}, SPAD C: {}", self.config.get_spad_a_channel_id(), self.config.get_spad_b_channel_id(), self.config.get_basis_bit_channel_id());
         // Spawn Time Tagger Ingest C++ Exec
         let mut child = Command::new("../time_tagger_ingest.exe")
             .arg(self.config.get_spad_a_channel_id().to_string())
             .arg(self.config.get_spad_b_channel_id().to_string())
+            .arg(self.config.get_basis_bit_channel_id().to_string())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
@@ -31,32 +33,47 @@ impl<'a> TimeTaggerIngest<'a> {
         let stdout = child.stdout.as_mut().expect("Failed to open stdout");
 
         let start_time = Instant::now();
-        let loop_duration = Duration::from_secs(10);
-        let mut bytes: u64 = 0;
+        let loop_duration = Duration::from_secs(1);
+        let header_bytes : usize = 4;
+        let mut bytes : u64 = 0;
         loop {
             if Instant::now().duration_since(start_time) > loop_duration {
                 break;
             }
-            bytes += (4096 * 12) + 4;
-            let mut buffer = vec![0u8; 4 + 4096 * 12];
+            let mut header_buffer = vec![0u8; header_bytes];
+            match stdout.read_exact(&mut header_buffer){
+              Ok(()) => {
 
-            stdout.read_exact(&mut buffer)?;
-
-            if buffer.len() < 4 {
+              },
+              Err(e) => {
+                println!("COULD NOT READ INTO HEADER BUFFER {}", e);
+                break;
+              }
+            }
+            if header_buffer.len() < 4 {
                 panic!("Not enough data for event count");
             }
-
             // Pipe Buffer block format
             // 00 00 00 00 (num events that follow) 
             // [00 00 00 00] [00 00 00 00 00 00 00 00] (ch, time__ps)
             // ..........................................
 
             // Header Marker, 4 bytes, number of events that follows
-            let num_events = u32::from_le_bytes(buffer[0..4].try_into().unwrap());
+            let num_events = u32::from_le_bytes(header_buffer[0..4].try_into().unwrap());
+            bytes += (header_bytes as u64 + (num_events*12) as u64);
+            let mut buffer = vec![0u8; (num_events * 12) as usize];
+            match stdout.read_exact(&mut buffer) {
+              Ok(()) => {
 
+              },
+              Err(e) => {
+                println!("COULD NOT READ INTO EVENT BUFFER: {}", e);
+                break;
+              }
+            }
             // Each event = 12 bytes (4 bytes ch + 8 bytes time_ps)
             for i in 0..num_events as usize {
-                let start = 4 + i * 12;
+                let start = i * 12;
                 let end = start + 12;
                 let chunk = &buffer[start..end];
 
@@ -84,18 +101,20 @@ impl<'a> TimeTaggerIngest<'a> {
                   }
 
                   // For SPAD Detections, only take events that come from the positive edge channels
-                  x if x > 0 && x.abs() as u32 == self.config.get_spad_a_channel_id() => {
+                  x if x >= 0 && x.abs() as u32 == self.config.get_spad_a_channel_id() => {
                     spad_a_detection_stream.push(PhotonDetectionEvent {
                         time_stamp: time_ps,
                         seq: i,
                         ch: ch,
+                        basis: None
                     });
                   }
-                  x if x > 0 && x.abs() as u32 == self.config.get_spad_a_channel_id() => {
+                  x if x >= 0 && x.abs() as u32 == self.config.get_spad_b_channel_id() => {
                     spad_b_detection_stream.push(PhotonDetectionEvent {
                         time_stamp: time_ps,
                         seq: i,
                         ch: ch,
+                        basis: None
                     });
                   }
 
@@ -103,7 +122,7 @@ impl<'a> TimeTaggerIngest<'a> {
                 }
             }
 
-            // for (i, event) in events.iter().enumerate() {
+            // for (i, event) in spad_a_detection_stream.iter().enumerate() {
             //     println!(
             //         "Event {}: ch={} time_ps={}",
             //         event.seq, event.ch, event.time_stamp
@@ -111,7 +130,7 @@ impl<'a> TimeTaggerIngest<'a> {
             // }
         }
 
-        println!("Bytes Processed in 10 Seconds: {}", bytes);
+        println!("Bytes Processed in {} Seconds: {}", loop_duration.as_secs(), bytes);
         Ok(())
     }
 }
