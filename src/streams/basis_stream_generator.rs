@@ -14,11 +14,6 @@ impl BasisStreamGenerator{
       Self { uart_port }
   }
 
-  /**
-    * Function Def: prints a list of active port connections on agent device
-    * Input: N/A
-    * Ouput: N/A
-    */
   pub fn obtain_available_port_lists(&self){
     match available_ports() {
       Ok(p) => {

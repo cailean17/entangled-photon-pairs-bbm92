@@ -1,6 +1,6 @@
-use crate::basis::Basis;
+use crate::streams::basis::Basis;
 use crate::config::Config;
-use crate::events::{BasisBitDetectionEvent, PhotonDetectionEvent};
+use crate::streams::events::{BasisBitDetectionEvent, PhotonDetectionEvent};
 use std::io::{self, Read};
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
@@ -33,7 +33,7 @@ impl<'a> TimeTaggerIngest<'a> {
         let stdout = child.stdout.as_mut().expect("Failed to open stdout");
 
         let start_time = Instant::now();
-        let loop_duration = Duration::from_secs(1);
+        let loop_duration = Duration::from_secs(3);
         let header_bytes : usize = 4;
         let mut bytes : u64 = 0;
         loop {

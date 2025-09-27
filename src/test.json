@@ -1,0 +1,10 @@
+{
+  "alice": {
+    "bucket": "entangled-bbm92-correlation",
+    "key": "test-measurement-1756854698474294.json"
+  },
+  "bob": {
+    "bucket": "entangled-bbm92-correlation",
+    "key": "test-measurement-1756854698473380.json"
+  }
+}

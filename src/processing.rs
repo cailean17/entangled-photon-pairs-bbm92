@@ -1,13 +1,10 @@
 use std::{fs::File, time::UNIX_EPOCH};
 
 use crate::{
-    basis::Basis,
-    events::{BasisBitDetectionEvent, PhotonDetectionEvent},
+    streams::basis::Basis,
+    streams::events::{BasisBitDetectionEvent, PhotonDetectionEvent},
 };
-use std::time::{Duration, Instant, SystemTime};
-
-use rand::Rng;
-use reqwest::Client;
+use std::time::{SystemTime};
 
 pub struct CorrelateDetectionEventwithActiveBasis<'a> {
     spad_a_detection_stream: &'a mut Vec<PhotonDetectionEvent>,
@@ -75,10 +72,9 @@ impl S3Writer{
 
   pub async fn write_photon_detection_stream_to_s3_presigned_url(&self, stream: &Vec<PhotonDetectionEvent>) -> Result<(), Box<dyn std::error::Error>>{
     // let client = reqwest::Client::new();
-    let mut rng = rand::thread_rng();
     let filename = format!("test-measurement-{}txt", SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros());
     let mut output = File::create(filename).expect("FAILED TO CREATE FILE");
-    serde_json::to_writer(&mut output, &stream[0..100])?;
+    serde_json::to_writer(&mut output, stream)?;
     // let response = client.put(&self.presigned_url_write).body(json_string).send().await?;
 
     // println!("RESPONSE: {}", response.status());
