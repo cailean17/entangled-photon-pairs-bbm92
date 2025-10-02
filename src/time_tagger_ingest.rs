@@ -3,7 +3,8 @@ use crate::config::Config;
 use crate::streams::events::{BasisBitDetectionEvent, PhotonDetectionEvent};
 use std::io::{self, Read};
 use std::process::{Command, Stdio};
-use std::time::{Duration, Instant};
+use chrono::prelude::*;
+
 pub struct TimeTaggerIngest<'a> {
     config: &'a Config,
 }
@@ -20,7 +21,7 @@ impl<'a> TimeTaggerIngest<'a> {
     ) -> io::Result<()> {
         // println!("SPAD A: {}, SPAD B: {}, SPAD C: {}", self.config.get_spad_a_channel_id(), self.config.get_spad_b_channel_id(), self.config.get_basis_bit_channel_id());
         // Spawn Time Tagger Ingest C++ Exec
-        let mut child = Command::new("../time_tagger_ingest.exe")
+        let mut child = Command::new("./time_tagger_ingest.exe")
             .arg(self.config.get_spad_a_channel_id().to_string())
             .arg(self.config.get_spad_b_channel_id().to_string())
             .arg(self.config.get_basis_bit_channel_id().to_string())
@@ -30,23 +31,26 @@ impl<'a> TimeTaggerIngest<'a> {
             .expect("Failed to start Time Tagger Ingest C++");
 
         // Read Pipe output
-        let stdout = child.stdout.as_mut().expect("Failed to open stdout");
-
-        let start_time = Instant::now();
-        let loop_duration = Duration::from_secs(3);
+        let mut stdout = child.stdout.take().expect("Failed to open stdout");
         let header_bytes : usize = 4;
         let mut bytes : u64 = 0;
         loop {
-            if Instant::now().duration_since(start_time) > loop_duration {
-                break;
+            if Utc::now() < self.config.get_contact_start_time().expect("Entered measurement control loop with an Empty Contact Start Time") {
+              continue;
             }
+            if Utc::now() > self.config.get_contact_end_time().expect("Entered measurement control loop with an Empty Contact End Time"){
+                println!("End Time Reached, stopping measurement!");
+                child.kill();
+                break; 
+            }
+            println!("In Measurement Phase");
             let mut header_buffer = vec![0u8; header_bytes];
             match stdout.read_exact(&mut header_buffer){
               Ok(()) => {
 
               },
               Err(e) => {
-                println!("COULD NOT READ INTO HEADER BUFFER {}", e);
+                println!("COULD NOT WRITE INTO HEADER BUFFER {}", e);
                 break;
               }
             }
@@ -100,7 +104,7 @@ impl<'a> TimeTaggerIngest<'a> {
                     });
                   }
 
-                  // For SPAD Detections, only take events that come from the positive edge channels
+                  // For SPAD Detections, only take events that come from the positive channels (rising edge detections)
                   x if x >= 0 && x.abs() as u32 == self.config.get_spad_a_channel_id() => {
                     spad_a_detection_stream.push(PhotonDetectionEvent {
                         time_stamp: time_ps,
@@ -130,7 +134,7 @@ impl<'a> TimeTaggerIngest<'a> {
             // }
         }
 
-        println!("Bytes Processed in {} Seconds: {}", loop_duration.as_secs(), bytes);
+        println!("Bytes Processed: {}", bytes);
         Ok(())
     }
 }

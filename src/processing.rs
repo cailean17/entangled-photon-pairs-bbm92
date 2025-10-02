@@ -71,13 +71,9 @@ impl S3Writer{
   }
 
   pub async fn write_photon_detection_stream_to_s3_presigned_url(&self, stream: &Vec<PhotonDetectionEvent>) -> Result<(), Box<dyn std::error::Error>>{
-    // let client = reqwest::Client::new();
-    let filename = format!("test-measurement-{}txt", SystemTime::now().duration_since(UNIX_EPOCH)?.as_micros());
-    let mut output = File::create(filename).expect("FAILED TO CREATE FILE");
-    serde_json::to_writer(&mut output, stream)?;
-    // let response = client.put(&self.presigned_url_write).body(json_string).send().await?;
-
-    // println!("RESPONSE: {}", response.status());
+    let client = reqwest::Client::new();
+    let response = client.put(&self.presigned_url_write).body(serde_json::to_vec(stream)?).send().await?;
+    println!("RESPONSE: {}", response.status());
     Ok(())
   }
 }

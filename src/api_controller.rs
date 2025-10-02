@@ -1,8 +1,8 @@
 pub mod api_structures;
-use crate::config::Config;
+use crate::{api_controller::api_structures::TelemetryWebSocketRequestMessage, config::Config};
 use reqwest_websocket::{Message, RequestBuilderExt, WebSocket};
 use serde_json::{Value, json};
-use futures_util::{TryStreamExt};
+use futures_util::{SinkExt, TryStreamExt};
 
 #[derive(Debug)]
 pub struct ApiController {
@@ -26,13 +26,12 @@ impl ApiController {
         self.web_socket_url = client_web_socket_url;
     }
 
-    pub fn set_web_socket_client(&mut self, web_socket_client: Option<WebSocket>) {
+    fn set_web_socket_client(&mut self, web_socket_client: Option<WebSocket>) {
         self.web_socket_client = web_socket_client;
     }
 
-    pub async fn start_control_plane_connection(
+    pub async fn control_plane_start_new_connection(
         &mut self,
-        config: &Config,
     ) -> Result<api_structures::ControlPlaneStartConnectionResponse, Box<dyn std::error::Error>>
     {
         let req_body: Value = json!({});
@@ -50,12 +49,6 @@ impl ApiController {
             200 => {
                 self.set_web_socket_url(Some(
                     res.body.websocket_client_endpoint.clone()
-                        + "&spad_a_channel_id="
-                        + &config.get_spad_a_channel_id().to_string()
-                        + "&spad_b_channel_id="
-                        + &config.get_spad_b_channel_id().to_string()
-                        + "&basis_bit_channel_id="
-                        + &config.get_basis_bit_channel_id().to_string(),
                 ));
                 println!("{:?}", res);
                 Ok(res)
@@ -69,11 +62,18 @@ impl ApiController {
         }
     }
 
-    pub async fn start_web_socket_connection(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    pub async fn web_socket_join_connection(&mut self, config: &Config) -> Result<(), Box<dyn std::error::Error>> {
         match &self.web_socket_url {
             Some(url) => {
+                let url_with_query_params = url.clone()
+                  + "&spad_a_channel_id="
+                  + &config.get_spad_a_channel_id().to_string()
+                  + "&spad_b_channel_id="
+                  + &config.get_spad_b_channel_id().to_string()
+                  + "&basis_bit_channel_id="
+                  + &config.get_basis_bit_channel_id().to_string();
                 let res = reqwest::Client::default()
-                    .get(url)
+                    .get(url_with_query_params)
                     .upgrade()
                     .send()
                     .await?
@@ -91,18 +91,32 @@ impl ApiController {
         }
     }
 
-    pub async fn read_web_socket(&mut self) -> Result<Option<reqwest_websocket::Message>, Box<dyn std::error::Error>> {
+    pub async fn web_socket_send(&mut self, message: TelemetryWebSocketRequestMessage) -> Result<String, Box<dyn std::error::Error>>{
+      match &mut self.web_socket_client {
+        Some(client) => {
+          let json = serde_json::to_string(&message).unwrap();
+          println!("{}", json.as_str());
+          client.send(Message::Text(json)).await?;
+          return Ok("DONE".to_string());
+        }
+        None => {
+          return Err("Attempted to read from non-existent websocket conneciton".into());
+        }
+
+      }
+    }
+    pub async fn web_socket_read(&mut self) -> Result<Option<reqwest_websocket::Message>, Box<dyn std::error::Error>> {
       match &mut self.web_socket_client {
         Some(client) => {
           while let Some(message) = client.try_next().await? {
-             match message {
-              Message::Text(_) => {
-               return Ok(Some(message))
-              },
-              _ => {
-               return Ok(None)
+              match message {
+                Message::Text(_) => {
+                return Ok(Some(message))
+                },
+                _ => {
+                  continue;
+                }
               }
-             }
           }
 
           Ok(None)
